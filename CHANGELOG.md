@@ -3,7 +3,16 @@
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/) 和 [语义化版本](https://semver.org/)。
 
 
-## [未发布]
+## [0.3.62] - 2026-10-09
+
+### 升级注意
+
+- 本次含**策略文件**（`bigqmt_signal_trader_strategy.py`：#389 合成事件的发布钩子装配）与
+  **runtime 顶层模块**（`bigqmt_signal_trader_redis_rpc_runtime.py`：#396 配置链）改动，
+  两者都不在 `reload_deployment` 的 purge 范围内——**策略重启一次才能全部生效**；
+  `sync + reload` 只激活包内改动。lemo 实盘已在重启后的 zmq 部署上验证全部生效。
+- #389 的 cancel_error 推送覆盖同步撤单路径；批量撤单（cancel_orders_batch）本就跳过结算、
+  靠原生状态推送确认，不在本次范围。
 
 ### 修复
 
