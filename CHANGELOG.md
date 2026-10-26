@@ -2,6 +2,25 @@
 
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/) 和 [语义化版本](https://semver.org/)。
 
+## [0.3.76] - 2026-10-26
+
+### 修复
+
+- **服务端内存随 adjust 节拍单调增长（pipe / zmq 部署尤甚）**：实测 pipe 部署、客户端全部
+  断开后终端内存仍以约 84KB/s 增长（19:00 784MB → 20:35 1264MB），把 `schedule_adjust_interval`
+  从 100ms 放到 1000ms 后稳态降到约 5-8KB/s —— 即每个 adjust tick 漏 5-8KB，与请求无关。
+  根因两条，都在 `tick_app` 的持仓同步里：
+  1. `NoopPositionSyncSink.publish` 名为 no-op，实际把每一份 `AccountSnapshot`（资产 + 全部
+     持仓行）追加进一个从没人读过的列表，进程不退出就不释放；非 redis 传输（pipe / zmq）
+     装配出来的正是这个 sink，100ms 一次就是每秒 10 份快照永久驻留。
+  2. 同步本身每 tick 调 2-3 次原生 `get_trade_detail_data`（POSITION、ACCOUNT、再 POSITION），
+     结果被这个 sink 丢掉，而终端每次原生调用都留下几 KB 不还（与 #361 记录的
+     `get_market_data_ex` 订阅池同一类）。
+  修法：sink 真正不存东西并带 `is_noop` 标记，`sync_positions` 见到该标记直接返回，
+  无信号时也不再预取持仓（原来每 tick 固定一次）；redis 部署新增
+  `position_sync_interval_seconds`（本地配置 → runtime → `configure` → `build_app`），把每
+  tick 的同步限到最多每 N 秒一次，成交回调触发的同步不受限。未设时行为不变。
+
 ## [0.3.75] - 2026-10-26
 
 ### 修复

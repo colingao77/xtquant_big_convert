@@ -19,7 +19,16 @@ class SignalTradingApp:
         state_store,
         consumer_id="bigqmt-signal-trader",
         fetch_limit=20,
+        position_sync_interval_seconds=0.0,
     ):
+        """
+        ``position_sync_interval_seconds`` rate-limits the per-tick position
+        sync: 0 (default) syncs on every tick as before; N > 0 syncs at most
+        once per N seconds. Event-driven syncs (``trade_event``) are never
+        limited. Every sync is two or three native ``get_trade_detail_data``
+        calls, and the terminal keeps a few KB per call (measured: ~5-8KB per
+        adjust tick, 480MB over 95 minutes at 10 ticks/s with no client).
+        """
         self.account_id = account_id
         self.signal_source = signal_source
         self.market_data = market_data
@@ -29,11 +38,16 @@ class SignalTradingApp:
         self.state_store = state_store
         self.consumer_id = consumer_id
         self.fetch_limit = int(fetch_limit)
+        self.position_sync_interval_seconds = max(0.0, float(position_sync_interval_seconds or 0.0))
+        self._last_tick_sync_at = None
 
     def tick(self, now=None):
         now = now or _dt.datetime.now()
         signals = self.signal_source.fetch(self.account_id, self.fetch_limit)
-        positions = self.position_provider.get_positions(self.account_id)
+        # Positions are only needed to validate signals. Fetching them up
+        # front cost one native get_trade_detail_data per tick on every
+        # deployment, signals or not; sync_positions below fetches its own.
+        positions = self.position_provider.get_positions(self.account_id) if signals else {}
 
         for signal in signals:
             if not self.state_store.claim(signal, self.consumer_id):
@@ -86,6 +100,22 @@ class SignalTradingApp:
 
     def sync_positions(self, reason, now=None):
         now = now or _dt.datetime.now()
+        # A sink that discards snapshots (pipe / zmq deployments with no Redis
+        # position cache) gets nothing from the two or three native queries a
+        # sync costs -- and the terminal keeps memory on every one of them.
+        # Duck-typed so the app never imports adapter_factory (it imports us).
+        if getattr(self.position_sync_sink, "is_noop", False):
+            return None
+        if reason == "tick" and self.position_sync_interval_seconds > 0:
+            last = self._last_tick_sync_at
+            if last is not None:
+                try:
+                    elapsed = (now - last).total_seconds()
+                except Exception:
+                    elapsed = None
+                if elapsed is not None and 0 <= elapsed < self.position_sync_interval_seconds:
+                    return None
+            self._last_tick_sync_at = now
         asset = self.position_provider.get_asset(self.account_id)
         positions = self.position_provider.get_positions(self.account_id)
         snapshot = AccountSnapshot(

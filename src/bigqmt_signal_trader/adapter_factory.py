@@ -34,11 +34,24 @@ class EmptyPositionProvider:
 
 
 class NoopPositionSyncSink:
+    """Position sink for deployments with no Redis position cache.
+
+    This used to append every snapshot to a list that nothing ever read:
+    one AccountSnapshot (asset + every position row) per adjust tick, kept
+    for the life of the process. At 10 ticks/s that alone grew the terminal
+    by tens of KB per second, and the two or three native queries that
+    built each snapshot cost terminal memory on top. ``is_noop`` lets the
+    app skip the queries too.
+    """
+
+    is_noop = True
+
     def __init__(self):
-        self.snapshots = []
+        self.published = 0
 
     def publish(self, snapshot):
-        self.snapshots.append(snapshot)
+        self.published += 1
+        return None
 
 
 class NoopStateStore:
@@ -164,4 +177,5 @@ def build_app(context_info=None, config=None):
         state_store=state_store or NoopStateStore(),
         consumer_id=config.get("consumer_id", "bigqmt-signal-trader"),
         fetch_limit=config.get("fetch_limit", 20),
+        position_sync_interval_seconds=float(config.get("position_sync_interval_seconds") or 0.0),
     )
