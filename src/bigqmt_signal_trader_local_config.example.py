@@ -71,6 +71,12 @@ BIGQMT_REDIS_CONFIG = {
     # RPC requests (#303). Unset = one adjust interval, never under 0.5s;
     # what does not fit waits for the next tick. 0 disables the bound.
     # "drain_budget_seconds": 0.5,
+    # Redis deployments only: sync asset + positions to the Redis position
+    # cache at most once per N seconds instead of on every adjust tick. Each
+    # sync is 2-3 native get_trade_detail_data calls and the terminal keeps a
+    # few KB per call (measured ~5-8KB per 100ms tick, 480MB over 95 min).
+    # Unset = every tick. pipe / zmq skip the sync entirely (nothing reads it).
+    # "position_sync_interval_seconds": 1.0,
     # Heavy reads leave the adjust thread for one worker thread in drain mode
     # (#351): financial data, formulas, and by size a market-token
     # get_full_tick, > rpc_heavy_codes_threshold codes, tick period or a date
