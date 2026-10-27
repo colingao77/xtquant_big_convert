@@ -1540,7 +1540,7 @@ wheels = [
 
 [[package]]
 name = "xtquant-big-convert"
-version = "0.3.75+patches.1"
+version = "0.3.75+patches.2"
 source = { editable = "." }
 dependencies = [
     { name = "pyzmq" },
